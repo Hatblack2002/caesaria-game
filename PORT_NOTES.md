@@ -103,8 +103,25 @@ Detalles quirúrgicos:
 
 ## Estado por fase
 
-* **F1 — compila**: CI `android-build` en GitHub Actions; produce APK firmado
-  arm64-v8a + artefacto `caesaria-apk`. (en curso)
+* **F1 — compila: VERDE** — run [40406490669](https://github.com/Hatblack2002/caesaria-game/actions/runs/40406490669)
+  (commit 85a69d2, job `build` success). APK release firmado 142 MB:
+  `lib/arm64-v8a/libmain.so` (11.4 MB) + 833 assets de `bin/resources` +
+  clases Java (LauncherActivity/CaesarIA/CrashReporter/SDLActivity) + fuente
+  Cinzel + iconos. Publicado como release `android-fase1`
+  (caesaria-android-fase1.apk). Iteraciones de CI:
+  1. 45961aa — REPO_ROOT con un `../` de más → configure_file/add_subdirectory
+     fallaban. Corregido a 5 niveles.
+  2. b5e64c5 — enlazado: `SDL_PrivateJoystick*` sin definir (backend joystick
+     compilado con joystick deshabilitado) y `AndroidGestures::*` sin definir
+     (GAME_PLATFORM_ANDROID no definido en androidgesture.cpp) → añadir
+     `#include "core/platform.hpp"` y quitar el backend joystick.
+  3. deb5612 — `Android_Window` no declarado (es interno de
+     SDL_androidvideo.h) → declaración extern propia.
+  4. b6040b0 — `Android_OnPadDown/OnJoy/...` sin definir: el JNI de SDL
+     (core/android/SDL_android.c) referencia el backend joystick → se habilita
+     joystick+gamecontroller (src/joystick/*.c + android) con
+     remove_definitions(-DSDL_JOYSTICK_DISABLED) en la rama ANDROID.
+  5. 85a69d2 — **verde**.
 * **F2 — instala**: APK directo (no AAB), `extractNativeLibs` legacy packaging,
   firma PKCS12 incluida (`caesaria.keystore`, alias `caesaria`, pass
   `caesaria` — keystore de desarrollo, documentada a propósito).
