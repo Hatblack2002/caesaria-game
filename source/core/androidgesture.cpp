@@ -30,6 +30,8 @@
 // exactly like the original synthetic touch mouse did.
 // SDL_MouseID is an internal type (Uint32) in SDL 2.0.4, not exposed publicly.
 extern "C" {
+// SDL's main Android window (declared internally in SDL_androidvideo.h)
+extern SDL_Window *Android_Window;
 extern int SDL_SendMouseMotion( SDL_Window* window, Uint32 mouseID, int relative, int x, int y );
 extern int SDL_SendMouseButton( SDL_Window* window, Uint32 mouseID, Uint8 state, Uint8 button );
 extern int SDL_SendMouseWheel( SDL_Window* window, Uint32 mouseID, int x, int y, SDL_MouseWheelDirection direction );
