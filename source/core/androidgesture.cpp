@@ -13,10 +13,11 @@
 // You should have received a copy of the GNU General Public License
 // along with CaesarIA.  If not, see <http://www.gnu.org/licenses/>.
 
-#include "androidgesture.hpp"
+#include "core/platform.hpp"
 
 #ifdef GAME_PLATFORM_ANDROID
 
+#include "androidgesture.hpp"
 #include "core/logger.hpp"
 #include "core/position.hpp"
 #include <SDL_system.h>

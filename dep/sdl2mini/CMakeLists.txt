@@ -41,7 +41,6 @@ if(ANDROID)
   file(GLOB AUDIO_ANDROID_SOURCES_LIST "src/audio/android/*.c")
   file(GLOB FILESYSTEM_ANDROID_SOURCES_LIST "src/filesystem/android/*.c")
   file(GLOB HAPTIC_DUMMY_SOURCES_LIST "src/haptic/dummy/*.c")
-  file(GLOB JOYSTICK_ANDROID_SOURCES_LIST "src/joystick/android/*.c")
   file(GLOB RENDER_GLES_SOURCES_LIST "src/render/opengles/*.c")
   file(GLOB RENDER_GLES2_SOURCES_LIST "src/render/opengles2/*.c")
   file(GLOB DYNAPI_SOURCES_LIST "src/dynapi/*.c")
@@ -80,7 +79,6 @@ if(ANDROID)
                 ${TIMER_SOURCES_LIST}
                 ${TIMER_UNIX_SOURCES_LIST}
                 ${HAPTIC_DUMMY_SOURCES_LIST}
-                ${JOYSTICK_ANDROID_SOURCES_LIST}
                 ${LOADSO_SOURCES_LIST}
                 ${DLOPEN_SOURCES_LIST}
                 ${ATOMIC_SOURCES_LIST}

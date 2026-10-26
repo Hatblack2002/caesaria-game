@@ -16,6 +16,8 @@
 #ifndef __CAESARIA_ANDROID_GESTURES_INCLUDE_HPP__
 #define __CAESARIA_ANDROID_GESTURES_INCLUDE_HPP__
 
+#include "core/platform.hpp"
+
 #ifdef GAME_PLATFORM_ANDROID
 
 #include <SDL.h>
