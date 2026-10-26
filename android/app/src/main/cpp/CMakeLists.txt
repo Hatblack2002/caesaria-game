@@ -4,7 +4,8 @@
 cmake_minimum_required(VERSION 3.10)
 project(caesaria-main C CXX)
 
-set(REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../..")
+# cpp -> main -> src -> app -> android -> repo root = 5 levels up
+set(REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../..")
 set(DEP_SOURCE_DIR "${REPO_ROOT}/dep")
 set(SRC_DIR "${REPO_ROOT}/source")
 set(STEAM_DIR "${REPO_ROOT}/steam")
