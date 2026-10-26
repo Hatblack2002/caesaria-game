@@ -44,6 +44,8 @@ if(ANDROID)
   file(GLOB RENDER_GLES_SOURCES_LIST "src/render/opengles/*.c")
   file(GLOB RENDER_GLES2_SOURCES_LIST "src/render/opengles2/*.c")
   file(GLOB DYNAPI_SOURCES_LIST "src/dynapi/*.c")
+  file(GLOB JOYSTICK_SOURCES_LIST "src/joystick/*.c")
+  file(GLOB JOYSTICK_ANDROID_SOURCES_LIST "src/joystick/android/*.c")
 
   add_definitions(-DSDL_TIMER_UNIX=1)
   add_definitions(-DSDL_THREAD_PTHREAD=1)
@@ -52,6 +54,10 @@ if(ANDROID)
   add_definitions(-DSDL_FILESYSTEM_ANDROID=1)
   add_definitions(-DSDL_JOYSTICK_ANDROID=1)
   add_definitions(-DSDL_POWER_DISABLED=1)
+  # joystick support must be ON: the SDL Android JNI layer (SDL_android.c)
+  # references Android_OnPadDown/Android_OnJoy/... which live in the backend
+  remove_definitions(-DSDL_JOYSTICK_DISABLED=1)
+  add_definitions(-DSDL_JOYSTICK_ANDROID=1)
   add_definitions(-DSDL_VIDEO_RENDER_OGL_ES=1)
   add_definitions(-DSDL_VIDEO_RENDER_OGL_ES2=1)
 
@@ -79,6 +85,8 @@ if(ANDROID)
                 ${TIMER_SOURCES_LIST}
                 ${TIMER_UNIX_SOURCES_LIST}
                 ${HAPTIC_DUMMY_SOURCES_LIST}
+                ${JOYSTICK_SOURCES_LIST}
+                ${JOYSTICK_ANDROID_SOURCES_LIST}
                 ${LOADSO_SOURCES_LIST}
                 ${DLOPEN_SOURCES_LIST}
                 ${ATOMIC_SOURCES_LIST}
