@@ -27,6 +27,9 @@
 #endif
 
 #include "SDL_sysvideo.h"
+#if defined(__ANDROID__)
+#include <android/native_window.h>
+#endif
 #include "SDL_egl_c.h"
 #include "SDL_loadso.h"
 #include "SDL_hints.h"

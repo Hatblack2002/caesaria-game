@@ -28,6 +28,69 @@ file(GLOB ATOMIC_SOURCES_LIST "src/atomic/*.c")
 file(GLOB RENDER_OPENGL_SOURCES_LIST "src/render/opengl/*.c")
 file(GLOB CPUINFO_SOURCES_LIST "src/cpuinfo/*.c")
 
+cmake_minimum_required(VERSION 3.10)
+
+if(ANDROID)
+  # ---- Android (ARM64) branch: mirrors dep/sdl2mini/Android.mk ----
+  file(GLOB TIMER_UNIX_SOURCES_LIST "src/timer/unix/*.c")
+  file(GLOB PTHREAD_SOURCES_LIST "src/thread/pthread/*.c")
+  file(GLOB DLOPEN_SOURCES_LIST "src/loadso/dlopen/*.c")
+  file(GLOB VIDEO_ANDROID_SOURCES_LIST "src/video/android/*.c")
+  file(GLOB VIDEO_BASE_SOURCES_LIST "src/video/*.c")
+  file(GLOB CORE_ANDROID_SOURCES_LIST "src/core/android/*.c")
+  file(GLOB AUDIO_ANDROID_SOURCES_LIST "src/audio/android/*.c")
+  file(GLOB FILESYSTEM_ANDROID_SOURCES_LIST "src/filesystem/android/*.c")
+  file(GLOB HAPTIC_DUMMY_SOURCES_LIST "src/haptic/dummy/*.c")
+  file(GLOB JOYSTICK_ANDROID_SOURCES_LIST "src/joystick/android/*.c")
+  file(GLOB RENDER_GLES_SOURCES_LIST "src/render/opengles/*.c")
+  file(GLOB RENDER_GLES2_SOURCES_LIST "src/render/opengles2/*.c")
+  file(GLOB DYNAPI_SOURCES_LIST "src/dynapi/*.c")
+
+  add_definitions(-DSDL_TIMER_UNIX=1)
+  add_definitions(-DSDL_THREAD_PTHREAD=1)
+  add_definitions(-DSDL_VIDEO_DRIVER_ANDROID=1)
+  add_definitions(-DSDL_AUDIO_DRIVER_ANDROID=1)
+  add_definitions(-DSDL_FILESYSTEM_ANDROID=1)
+  add_definitions(-DSDL_JOYSTICK_ANDROID=1)
+  add_definitions(-DSDL_POWER_DISABLED=1)
+  add_definitions(-DSDL_VIDEO_RENDER_OGL_ES=1)
+  add_definitions(-DSDL_VIDEO_RENDER_OGL_ES2=1)
+
+  add_library( ${PROJECT_NAME} STATIC
+                ${SDL2MINI_SOURCES_LIST}
+                ${VIDEO_BASE_SOURCES_LIST}
+                ${VIDEO_ANDROID_SOURCES_LIST}
+                ${CORE_ANDROID_SOURCES_LIST}
+                ${EVENTS_SOURCES_LIST}
+                ${RENDER_SOURCES_LIST}
+                ${RENDER_SW_SOURCES_LIST}
+                ${RENDER_OPENGL_SOURCES_LIST}
+                ${RENDER_GLES_SOURCES_LIST}
+                ${RENDER_GLES2_SOURCES_LIST}
+                ${FILE_SOURCES_LIST}
+                ${FILESYSTEM_ANDROID_SOURCES_LIST}
+                ${AUDIO_SOURCES_LIST}
+                ${AUDIO_ANDROID_SOURCES_LIST}
+                ${AUDIO_DUMMY_SOURCES_LIST}
+                ${VIDEO_DUMMY_SOURCES_LIST}
+                ${STDLIB_SOURCES_LIST}
+                ${LIBM_SOURCES_LIST}
+                ${THREAD_SOURCES_LIST}
+                ${PTHREAD_SOURCES_LIST}
+                ${TIMER_SOURCES_LIST}
+                ${TIMER_UNIX_SOURCES_LIST}
+                ${HAPTIC_DUMMY_SOURCES_LIST}
+                ${JOYSTICK_ANDROID_SOURCES_LIST}
+                ${LOADSO_SOURCES_LIST}
+                ${DLOPEN_SOURCES_LIST}
+                ${ATOMIC_SOURCES_LIST}
+                ${CPUINFO_SOURCES_LIST}
+                ${DYNAPI_SOURCES_LIST}
+              )
+
+  set_target_properties(${PROJECT_NAME} PROPERTIES POSITION_INDEPENDENT_CODE ON)
+  target_link_libraries( ${PROJECT_NAME} log android GLESv1_CM GLESv2 dl m)
+else(ANDROID)
 if(UNIX AND NOT APPLE)
   file(GLOB TIMER_UNIX_SOURCES_LIST "src/timer/unix/*.c")
   file(GLOB VIDEO_X11_SOURCES_LIST "src/video/x11/*.c")
@@ -174,6 +237,8 @@ if(WIN32)
 
    target_link_libraries( ${PROJECT_NAME} imm32 opengl32 version)
 endif()
+
+endif(ANDROID)
 
 # Expose public includes to other through cache variable.
 set(SDL2MINI_INCLUDE_DIR ${PROJECT_SOURCE_DIR}/include

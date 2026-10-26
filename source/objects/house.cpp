@@ -1495,10 +1495,10 @@ std::string House::levelName() const
 void House::_updateHealthLevel()
 {
   Services& s = _d->services;
-  float delim = 1 + (((s[Service::well] > 0 || s[Service::fountain] > 0) ? 1 : 0)) //if we have water then decrease ill
-      + ((s[Service::doctor] > 0 || s[Service::hospital] > 0) ? 1 : 0)             //doctor access also decrease ill
-      + (s[Service::baths] > 0 ? 0.7 : 0)                                          //baths and barber some decrease ill
-      + (s[Service::barber] > 0 ? 0.3 : 0);
+  float delim = 1 + (((s[Service::well] != nullptr || s[Service::fountain] != nullptr) ? 1 : 0)) //if we have water then decrease ill
+      + ((s[Service::doctor] != nullptr || s[Service::hospital] != nullptr) ? 1 : 0)             //doctor access also decrease ill
+      + (s[Service::baths] != nullptr ? 0.7 : 0)                                          //baths and barber some decrease ill
+      + (s[Service::barber] != nullptr ? 0.3 : 0);
 
   float decrease = 2.f / delim;
 

@@ -23,6 +23,7 @@
 #include "core/logger.hpp"
 #include "core/stacktrace.hpp"
 #include "core/osystem.hpp"
+#include "scene/constants.hpp"
 #include "steam.hpp"
 
 #ifdef GAME_PLATFORM_WIN
@@ -95,6 +96,35 @@ int main(int argc, char* argv[])
   {
     Game game;
     game.initialize();
+
+#ifdef GAME_PLATFORM_ANDROID
+    // Native launcher (LauncherActivity) requests a direct action:
+    // -action new      -> start tutorial city, skip engine main menu
+    // -action continue -> load last save, skip engine main menu
+    // -action loadfile -> load file passed via -loadfile <path>
+    // anything else    -> show engine main menu (used for -action options)
+    std::string launcherAction = game::Settings::get( "action" ).toString();
+    if( launcherAction == "new" || launcherAction == "continue" || launcherAction == "loadfile" )
+    {
+      std::string cityFile;
+      if( launcherAction == "new" )
+        cityFile = ":/missions/tutorial.mission";
+      else
+        cityFile = game::Settings::get( "loadfile" ).toString();
+
+      if( launcherAction == "continue" && cityFile.empty() )
+        cityFile = SETTINGS_STR(lastGame);
+
+      Logger::info("Launcher action '" + launcherAction + "' loading '" + cityFile + "'");
+      if( !cityFile.empty() )
+      {
+        game.reset();
+        if( game.load( cityFile ) )
+          game.setNextScreen( scene::SCREEN_GAME );
+      }
+    }
+#endif
+
     while( game.exec() );
 
     game.destroy();

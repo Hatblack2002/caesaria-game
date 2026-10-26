@@ -1,0 +1,81 @@
+apply plugin: 'com.android.application'
+
+// repo root = 2 levels above this file's project dir (android/app -> android -> repo)
+def repoRoot = file("${projectDir}/../..")
+
+android {
+    namespace 'net.dalerank.caesaria'
+    compileSdk 34
+    ndkVersion '27.0.12077973'
+
+    defaultConfig {
+        applicationId "net.dalerank.caesaria"
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName "0.5-android.1"
+
+        ndk {
+            abiFilters "arm64-v8a"
+        }
+
+        externalNativeBuild {
+            cmake {
+                arguments "-DANDROID_STL=c++_static",
+                          "-DCMAKE_BUILD_TYPE=Release"
+                cppFlags "-frtti -fexceptions"
+            }
+        }
+    }
+
+    signingConfigs {
+        release {
+            storeFile file("${projectDir}/caesaria.keystore")
+            storePassword "caesaria"
+            keyAlias "caesaria"
+            keyPassword "caesaria"
+            storeType "PKCS12"
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+        debug {
+            signingConfig signingConfigs.release
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path "src/main/cpp/CMakeLists.txt"
+            version "3.22.1"
+        }
+    }
+
+    sourceSets {
+        main {
+            // bundle the game's own resources (gfx cache) as APK assets
+            assets.srcDirs += [ "${repoRoot}/bin" ]
+        }
+    }
+
+    packagingOptions {
+        jniLibs {
+            // keep .so files extracted on disk (SDL file I/O + legacy loader path)
+            useLegacyPackaging = true
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+}
+
+// silence warning about aapt2 and missing dependencies: the project uses
+// only android.* framework APIs, no external libraries at all.
+dependencies {
+}

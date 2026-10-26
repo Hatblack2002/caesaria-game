@@ -20,6 +20,14 @@
 
 #include <string>
 
+// clang/gcc on Android/Linux predefine these macros; they clash with the enum values below
+#if defined(unix)
+  #undef unix
+#endif
+#if defined(linux)
+  #undef linux
+#endif
+
 class StringArray;
 
 class OSystem

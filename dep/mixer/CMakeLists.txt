@@ -65,3 +65,9 @@ set(MIXER_INCLUDE_DIR ${PROJECT_SOURCE_DIR}
 
 set(MIXER_LIBRARY ${PROJECT_NAME}
     CACHE INTERNAL "${PROJECT_NAME}: Library Name" FORCE)
+
+if(ANDROID)
+  target_compile_options(${PROJECT_NAME} PRIVATE
+    -Wno-error=incompatible-function-pointer-types
+    -Wno-incompatible-function-pointer-types)
+endif()

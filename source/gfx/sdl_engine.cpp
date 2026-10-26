@@ -33,6 +33,7 @@
 #include "core/debug_timer.hpp"
 #include "core/exception.hpp"
 #include "core/eventconverter.hpp"
+#include "core/androidgesture.hpp"
 #include "IMG_savepng.h"
 #include "pictureconverter.hpp"
 #include "font/font.hpp"
@@ -826,6 +827,12 @@ bool SdlEngine::haveEvent( NEvent& event )
 
   if( SDL_PollEvent(&sdlEvent) )
   {
+#ifdef GAME_PLATFORM_ANDROID
+    // touch events are consumed by the gesture recognizer, which feeds the
+    // engine with synthesized mouse events instead (tap/drag/pinch/long-press)
+    if( AndroidGestures::instance().handle( sdlEvent ) )
+      return false;
+#endif
     event = EventConverter::instance().get( sdlEvent );
 
 #ifdef GAME_PLATFORM_ANDROID
