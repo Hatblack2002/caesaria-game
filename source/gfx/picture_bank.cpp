@@ -91,7 +91,7 @@ void PictureBank::Impl::setPicture( const std::string &name, const Picture& pic 
   if( it != resources.end() )
   {
     //SDL_DestroyTexture( it->second.texture() );
-    if( it->second.texture() > 0 )
+    if( it->second.texture() != nullptr )
       txCounters[ it->second.texture() ]--;
 
     ptrPic = &it->second;
@@ -103,7 +103,7 @@ void PictureBank::Impl::setPicture( const std::string &name, const Picture& pic 
   }
 
   *ptrPic = pic;
-  if( pic.texture() > 0 )
+  if( pic.texture() != nullptr )
     txCounters[ pic.texture() ]++;
 
   Point offset( 0, 0 );

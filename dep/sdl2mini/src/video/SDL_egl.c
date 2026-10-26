@@ -31,6 +31,10 @@
 #include "SDL_loadso.h"
 #include "SDL_hints.h"
 
+#if defined(__ANDROID__)
+#include <android/native_window.h>
+#endif
+
 #ifdef EGL_KHR_create_context
 /* EGL_OPENGL_ES3_BIT_KHR was added in version 13 of the extension. */
 #ifndef EGL_OPENGL_ES3_BIT_KHR

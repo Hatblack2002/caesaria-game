@@ -18,6 +18,15 @@
 #ifndef __CAESARIA_OSYSTEM_INCLUDE_HPP__
 #define __CAESARIA_OSYSTEM_INCLUDE_HPP__
 
+// clang predefines `unix` and `linux` as macros (1); they clash with the
+// enum members below on Android (NDK clang).
+#if defined(unix)
+#undef unix
+#endif
+#if defined(linux)
+#undef linux
+#endif
+
 #include <string>
 
 class StringArray;

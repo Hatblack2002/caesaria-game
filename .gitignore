@@ -59,3 +59,12 @@ Win32
 # exclude ignore
 !bin/resources
 /bin/resources/settings.model
+
+# === Android port build artifacts ===
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/app/src/main/assets/telemetry.properties
+android/app/src/main/obj/
+android/app/src/main/libs/

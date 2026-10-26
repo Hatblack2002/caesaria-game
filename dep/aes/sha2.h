@@ -71,7 +71,7 @@
 #endif
 #else
   #include <stdint.h>
-  typedef int64_t sha2_64t;
+  typedef uint64_t sha2_64t;  /* Android port: must be unsigned (was int64_t, breaks C++11 narrowing on LP64) */
   #if __WORDSIZE==64
     #define s_u64 ul
   #else

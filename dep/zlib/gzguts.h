@@ -27,6 +27,10 @@
 #endif
 #include <fcntl.h>
 
+#if !defined(_WIN32) && !defined(UNDER_CE) && !defined(__TURBOC__)
+#  include <unistd.h>
+#endif
+
 #ifdef NO_DEFLATE       /* for compatibility with old definition */
 #  define NO_GZCOMPRESS
 #endif

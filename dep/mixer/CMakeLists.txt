@@ -60,6 +60,11 @@ add_library(${PROJECT_NAME} STATIC ${MIXER_SOURCES_LIST} ${VORBIS_SRC})
 
 target_link_libraries( ${PROJECT_NAME} ${SDL2MINI_LIBRARY} )
 
+if(ANDROID)
+  # old tremor callback signatures: function-pointer mismatch warnings are non-fatal here
+  target_compile_options(${PROJECT_NAME} PRIVATE -Wno-error=incompatible-function-pointer-types -Wno-incompatible-function-pointer-types)
+endif()
+
 set(MIXER_INCLUDE_DIR ${PROJECT_SOURCE_DIR}
     CACHE INTERNAL "${PROJECT_NAME}: Include Directories" FORCE)
 

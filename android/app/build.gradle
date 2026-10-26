@@ -1,0 +1,78 @@
+plugins {
+    id 'com.android.application'
+}
+
+def repoRoot = file("${projectDir}/../../..")
+
+android {
+    namespace 'net.dalerank.caesaria'
+    compileSdk 34
+    ndkVersion '27.0.12077973'
+
+    defaultConfig {
+        applicationId "net.dalerank.caesaria"
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName "0.5-android.1"
+
+        externalNativeBuild {
+            cmake {
+                arguments "-DANDROID_STL=c++_static",
+                          "-DCMAKE_BUILD_TYPE=RelWithDebInfo"
+                abiFilters "arm64-v8a"
+                cppFlags "-frtti -fexceptions"
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path file('src/main/cpp/CMakeLists.txt')
+            version '3.22.1'
+        }
+    }
+
+    signingConfigs {
+        release {
+            // committed keystore: throwaway key for sideloading, see PORT_NOTES.md
+            storeFile file('caesaria.keystore')
+            storePassword 'caesaria'
+            keyAlias 'caesaria'
+            keyPassword 'caesaria'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+        debug {
+            signingConfig signingConfigs.release
+        }
+    }
+
+    sourceSets {
+        main {
+            // game engine resources (models, fonts, sounds, gfx cache) ship as APK assets
+            assets.srcDirs += [file("${repoRoot}/bin")]
+            java.srcDirs = ['src/main/java']
+        }
+    }
+
+    packagingOptions {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+}
+
+dependencies {
+    // no external dependencies: SDL2 (sdl2mini) is vendored and compiled from source
+}

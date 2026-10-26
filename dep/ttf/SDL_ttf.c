@@ -1726,7 +1726,7 @@ int TTF_RenderUTF8_Blended_TX( unsigned int* data, int h, int p, TTF_Font *font,
     FT_UInt prev_index = 0;
     size_t textlen;
 
-    TTF_CHECKPOINTER(text, NULL);
+    TTF_CHECKPOINTER(text, 0);
 
     /* Get the dimensions of the text surface */
     if ( ( TTF_SizeUTF8(font, text, &width, &height) < 0 ) || !width ) {
