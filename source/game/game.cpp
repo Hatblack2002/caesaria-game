@@ -458,7 +458,7 @@ void Game::initialize()
   }
 
 #ifdef GAME_PLATFORM_ANDROID
-  if( videoFailed || engine == nullptr )
+  if( videoFailed || d.engine == nullptr )
   {
     // unwinds to main(), which logs the failure and lets the SDL activity
     // finish cleanly instead of killing the whole application
