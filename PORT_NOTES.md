@@ -142,3 +142,31 @@ Detalles quirúrgicos:
 * El `data_path` extra se pasa al Intent pero el motor sigue usando
   `SDL_AndroidGetExternalStoragePath()` (mismo directorio); `-R` queda
   disponible por si se cambia.
+
+## Iteración 2 — bug "al pulsar cualquier botón se cierra" (65f5486)
+
+* **Causa raíz encontrada**: `Game::initialize()` (source/game/game.cpp)
+  llamaba `exit(-1)` si cualquier paso de inicialización fallaba o lanzaba
+  excepción. En Android `exit()` mata el proceso completo → el usuario veía
+  la app cerrarse al pulsar Continuar/Nueva/Cargar/Opciones (todas abren el
+  motor). Además `crashhandler` es no-op en Android, así que no quedaba
+  rastro ninguno.
+* **Correcciones**:
+  1. `Game::initialize` ya no hace `exit(-1)` en Android: los pasos que
+     fallan se saltan con log (`android continue without step X`); solo si
+     el subsistema de video no está disponible se lanza `Exception` y main()
+     termina limpio (la activity SDL hace `finish()` y se vuelve al launcher
+     en vez de cerrarse la app).
+  2. `main.cpp`: bloque `-action` envuelto en try/catch; si la carga directa
+     falla (p. ej. "Nueva partida" sin datos), se cae al menú del motor
+     en lugar de quedar el motor sin pantalla.
+  3. **Telemetría v2** (CrashReporter): los reportes se guardan en disco y se
+     suben en el **siguiente arranque** de la app (sobrevive a la muerte del
+     proceso). Marca de sesión del motor (`telemetry/engine_session.txt`):
+     si sobrevive al siguiente arranque → salida anormal → reporte automático
+     con `stdout.txt` (log del motor) + logcat (buffers main y crash, que
+     contienen el backtrace nativo de debuggerd).
+  4. CI: artefacto `caesaria-native-symbols` con libmain.so sin strip para
+     simbolizar backtraces.
+* Pendiente de verificar en S20: qué paso de inicialización falla (el reporte
+  telemétrico lo dirá).
