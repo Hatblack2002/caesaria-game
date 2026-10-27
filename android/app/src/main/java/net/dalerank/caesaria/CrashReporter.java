@@ -47,10 +47,12 @@ public class CrashReporter
   private static final String TAG = "CAESARIA_TELEMETRY";
   private static final String DIR = "telemetry";
   private static final String SESSION_FLAG = "engine_session.txt";
+  private static final String ENGINE_ERROR = "engine_error.txt";
   private static final int MAX_PENDING = 6;
   private static final int MAX_BODY = 60000;
 
   private static boolean sInitDone = false;
+  private static volatile boolean sEngineRunning = false;
   private static Context sAppContext = null;
   private static String sToken = "";
   private static String sRepo = "";
@@ -105,6 +107,24 @@ public class CrashReporter
     }
   }
 
+  /**
+   * Re-check for abnormal-exit markers and re-try pending uploads. Called
+   * when the launcher resumes (e.g. right after the engine finished, so a
+   * native fatal error recorded during the session is delivered at once).
+   */
+  public static void refresh( final Context ctx )
+  {
+    new Thread( new Runnable()
+    {
+      @Override
+      public void run()
+      {
+        collectPreviousSession( ctx );
+        uploadPending();
+      }
+    }, "caesaria-telemetry" ).start();
+  }
+
   /** Engine session started (call from CaesarIA.onCreate). */
   public static void markEngineStart( Context ctx, String action, String loadfile )
   {
@@ -120,6 +140,7 @@ public class CrashReporter
       java.io.FileOutputStream fo = new java.io.FileOutputStream( f );
       fo.write( content.getBytes( StandardCharsets.UTF_8 ) );
       fo.close();
+      sEngineRunning = true;
       Log.i( TAG, "engine session marked" );
     }
     catch( Throwable t ) { Log.w( TAG, "markEngineStart failed", t ); }
@@ -131,6 +152,7 @@ public class CrashReporter
     try
     {
       new File( logRoot( ctx ), SESSION_FLAG ).delete();
+      sEngineRunning = false;
       Log.i( TAG, "engine session ended normally" );
     }
     catch( Throwable t ) { Log.w( TAG, "markEngineEnd failed", t ); }
@@ -146,43 +168,47 @@ public class CrashReporter
    */
   private static void collectPreviousSession( Context ctx )
   {
+    // if the engine activity is alive in this process (paused under the
+    // launcher) its session flag is NOT an abnormal-exit marker
+    boolean flagAlive = !sEngineRunning;
     File flag = new File( logRoot( ctx ), SESSION_FLAG );
-    boolean abnormal = flag.exists();
+    File errFile = new File( logRoot( ctx ), ENGINE_ERROR );
+    boolean abnormal = (flag.exists() && flagAlive) || errFile.exists();
     try
     {
+      if( !abnormal )
+      {
+        Log.i( TAG, "no pending engine failure markers" );
+        return;
+      }
+
       String logcat = dumpLogcat( "-d -t 3000 -v time" ) + "\n"
                     + dumpLogcat( "-d -b crash -t 800 -v time" );
 
-      if( abnormal )
-      {
-        String session = readFile( flag );
-        String nativeLog = tailFile( new File( ctx.getExternalFilesDir( null ), "stdout.txt" ), 30000 );
-        StringBuilder sb = new StringBuilder();
-        sb.append( "CaesarIA abnormal engine exit report\n" )
-          .append( "type: native/abnormal (engine_session flag survived)\n" )
-          .append( "version: " ).append( sApkVersion ).append( '\n' )
-          .append( "commit: " ).append( sCommit ).append( '\n' )
-          .append( "device: " ).append( Build.MANUFACTURER ).append( ' ' ).append( Build.MODEL )
-          .append( " (" ).append( Build.BOARD ).append(")\n" )
-          .append( "android: " ).append( Build.VERSION.RELEASE )
-          .append( " (api " ).append( Build.VERSION.SDK_INT ).append( ")\n" )
-          .append( "---- engine session ----\n" ).append( session ).append( '\n' );
-        if( !nativeLog.isEmpty() )
-          sb.append( "---- engine stdout.txt (tail) ----\n" ).append( nativeLog ).append( '\n' );
-        else
-          sb.append( "---- engine stdout.txt ----\n(native log not found)\n" );
-        sb.append( "---- logcat main+crash ----\n" ).append( logcat );
+      String session = flag.exists() ? readFile( flag ) : "(no session flag)";
+      String engineErrors = errFile.exists() ? readFile( errFile ) : "(none)";
+      String nativeLog = tailFile( new File( ctx.getExternalFilesDir( null ), "stdout.txt" ), 30000 );
 
-        String ts = new SimpleDateFormat( "yyyyMMdd-HHmmss", Locale.US ).format( new Date() );
-        writeFile( new File( logRoot( ctx ), "report-native-" + ts + ".txt" ), sb.toString() );
-        Log.e( TAG, "previous engine session ended abnormally - report saved" );
-      }
+      StringBuilder sb = new StringBuilder();
+      sb.append( "CaesarIA abnormal engine exit report\n" )
+        .append( "type: native/abnormal\n" )
+        .append( "version: " ).append( sApkVersion ).append( '\n' )
+        .append( "commit: " ).append( sCommit ).append( '\n' )
+        .append( "device: " ).append( Build.MANUFACTURER ).append( ' ' ).append( Build.MODEL )
+        .append( " (" ).append( Build.BOARD ).append(")\n" )
+        .append( "android: " ).append( Build.VERSION.RELEASE )
+        .append( " (api " ).append( Build.VERSION.SDK_INT ).append( ")\n" )
+        .append( "---- engine session ----\n" ).append( session ).append( '\n' )
+        .append( "---- engine_error.txt ----\n" ).append( engineErrors ).append( '\n' );
+      if( !nativeLog.isEmpty() )
+        sb.append( "---- engine stdout.txt (tail) ----\n" ).append( nativeLog ).append( '\n' );
       else
-      {
-        // normal start: keep the logcat snapshot as an unnamed report only if
-        // a crash file from the Java handler asked for context - otherwise skip
-        Log.i( TAG, "no pending engine session flag" );
-      }
+        sb.append( "---- engine stdout.txt ----\n(native log not found)\n" );
+      sb.append( "---- logcat main+crash ----\n" ).append( logcat );
+
+      String ts = new SimpleDateFormat( "yyyyMMdd-HHmmss", Locale.US ).format( new Date() );
+      writeFile( new File( logRoot( ctx ), "report-native-" + ts + ".txt" ), sb.toString() );
+      Log.e( TAG, "engine failure markers found - report saved" );
     }
     catch( Throwable t )
     {
@@ -190,7 +216,12 @@ public class CrashReporter
     }
     finally
     {
-      if( abnormal ) flag.delete();
+      // markers are consumed: they now live inside the pending report file
+      if( abnormal )
+      {
+        if( flagAlive ) flag.delete();
+        errFile.delete();
+      }
     }
   }
 

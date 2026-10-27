@@ -251,10 +251,24 @@ void SdlEngine::init()
   _srcSize = Size( mode.width(), mode.height() );
   Logger::warning( "SDLGraficEngine: Android set mode {}x{}",  _srcSize.width(), _srcSize.height() );
 
+  // The EGL library loader only loads libGLESv2 when the context profile is
+  // ES; without these attributes SDL_CreateWindow silently fails on Android
+  // ("Could not initialize OpenGL / GLES library") because DEFAULT_OGL is not
+  // defined for this platform. The GLES2 renderer driver needs an ES2 config.
+  SDL_GL_SetAttribute( SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES );
+  SDL_GL_SetAttribute( SDL_GL_CONTEXT_MAJOR_VERSION, 2 );
+  SDL_GL_SetAttribute( SDL_GL_CONTEXT_MINOR_VERSION, 0 );
+
   _d->window = SDL_CreateWindow( "CaesarIA:android",
                                  SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                                  _srcSize.width(), _srcSize.height(),
                                  SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_BORDERLESS );
+
+  if( _d->window == NULL )
+  {
+    Logger::fatal( "!!! Unable to create SDL-window: {}", SDL_GetError() );
+    THROW( "Failed to create android window: " << SDL_GetError() );
+  }
 
   Logger::warning("SDLGraficEngine:Android init successfull");
 #else

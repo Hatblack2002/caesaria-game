@@ -36,6 +36,7 @@
 #include "vfs/entries.hpp"
 #include "world/empire.hpp"
 #include "core/exception.hpp"
+#include "core/androidtelemetry.hpp"
 #include "loader.hpp"
 #include "gamedate.hpp"
 #include "font/font_collection.hpp"
@@ -418,53 +419,42 @@ void Game::initialize()
   };
   #undef ADD_STEP
 
-  bool videoFailed = false;
   for (auto& step : steps)
   {
     bool isOk = true;
     std::string stepText;
+    std::string failReason;
 
     try
     {
       step.function(isOk, stepText);
       if (!isOk)
-      {
-        Logger::error( "Game: initialize faild on step {}", step.name );
-#ifdef GAME_PLATFORM_ANDROID
-        // Killing the process here closes the whole application instantly
-        // (exit() bypasses every crash reporter). Degrade instead: skip the
-        // failed step and keep booting; only a broken video subsystem is fatal.
-        if( std::string( step.name ) == "initVideo" )
-          videoFailed = true;
-        Logger::warning( "Game: android continue without step {}", step.name );
-        continue;
-#else
-        OSystem::error( "Game: initialize faild on step", step.name );
-        exit(-1); //kill application
-#endif
-      }
+        failReason = std::string( "step reported failure: " ) + step.name;
     }
-    catch(...)
+    catch( Exception& e )
     {
-      Logger::error( "Game: initialize exception in step {}", step.name );
+      failReason = std::string( "step exception: " ) + step.name + ": " + e.getDescription();
+    }
+    catch( ... )
+    {
+      failReason = std::string( "step exception: " ) + step.name;
+    }
+
+    if( !failReason.empty() )
+    {
+      Logger::error( "Game: initialize faild on step {}", step.name );
 #ifdef GAME_PLATFORM_ANDROID
-      if( std::string( step.name ) == "initVideo" )
-        videoFailed = true;
-      Logger::warning( "Game: android continue without step {}", step.name );
+      // exit() here would kill the whole application with no trace; instead
+      // record the failing step (telemetry uploads it on next start) and
+      // unwind cleanly to main(), which lets the SDL activity finish
+      androidtelemetry::noteFailure( "Game::initialize " + failReason );
+      throw Exception( "Game: initialize failed (" + failReason + ")" );
 #else
-      exit(-1);
+      OSystem::error( "Game: initialize faild on step", step.name );
+      exit(-1); //kill application
 #endif
     }
   }
-
-#ifdef GAME_PLATFORM_ANDROID
-  if( videoFailed || d.engine == nullptr )
-  {
-    // unwinds to main(), which logs the failure and lets the SDL activity
-    // finish cleanly instead of killing the whole application
-    throw Exception( "Game: android video subsystem unavailable" );
-  }
-#endif
 
   d.nextScreen = SCREEN_LOGO;
   d.engine->setFlag(gfx::Engine::showMetrics, 1);

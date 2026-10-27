@@ -709,6 +709,9 @@ public class LauncherActivity extends Activity
     super.onResume();
     Log.i( TAG, "launcher resumed" );
     launching = false;
+    // the engine may have just finished (possibly with a native fatal error):
+    // convert any failure marker into a report and deliver pending reports
+    CrashReporter.refresh( this );
     // user may have created/deleted saves while the engine was running
     if( inMenu ) refreshButtons();
   }

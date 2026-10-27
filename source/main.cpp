@@ -17,6 +17,7 @@
 
 #include "core/utils.hpp"
 #include "core/exception.hpp"
+#include "core/androidtelemetry.hpp"
 #include "vfs/directory.hpp"
 #include "game/settings.hpp"
 #include "game/game.hpp"
@@ -150,6 +151,17 @@ int main(int argc, char* argv[])
   catch( Exception& e )
   {
     Logger::fatal("Critical error: " + e.getDescription());
+#ifdef GAME_PLATFORM_ANDROID
+    androidtelemetry::noteFailure( "main fatal: " + e.getDescription() );
+#endif
+    crashhandler::printstack();
+  }
+  catch( ... )
+  {
+    Logger::fatal("Critical error: unknown exception");
+#ifdef GAME_PLATFORM_ANDROID
+    androidtelemetry::noteFailure( "main fatal: unknown exception" );
+#endif
     crashhandler::printstack();
   }
 
