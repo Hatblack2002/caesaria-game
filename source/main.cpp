@@ -103,25 +103,43 @@ int main(int argc, char* argv[])
     // -action continue -> load last save, skip engine main menu
     // -action loadfile -> load file passed via -loadfile <path>
     // anything else    -> show engine main menu (used for -action options)
-    std::string launcherAction = game::Settings::get( "action" ).toString();
-    if( launcherAction == "new" || launcherAction == "continue" || launcherAction == "loadfile" )
+    try
     {
-      std::string cityFile;
-      if( launcherAction == "new" )
-        cityFile = ":/missions/tutorial.mission";
-      else
-        cityFile = game::Settings::get( "loadfile" ).toString();
-
-      if( launcherAction == "continue" && cityFile.empty() )
-        cityFile = SETTINGS_STR(lastGame);
-
-      Logger::info("Launcher action '" + launcherAction + "' loading '" + cityFile + "'");
-      if( !cityFile.empty() )
+      std::string launcherAction = game::Settings::get( "action" ).toString();
+      if( launcherAction == "new" || launcherAction == "continue" || launcherAction == "loadfile" )
       {
-        game.reset();
-        if( game.load( cityFile ) )
-          game.setNextScreen( scene::SCREEN_GAME );
+        std::string cityFile;
+        if( launcherAction == "new" )
+          cityFile = ":/missions/tutorial.mission";
+        else
+          cityFile = game::Settings::get( "loadfile" ).toString();
+
+        if( launcherAction == "continue" && cityFile.empty() )
+          cityFile = SETTINGS_STR(lastGame);
+
+        Logger::info("Launcher action '" + launcherAction + "' loading '" + cityFile + "'");
+        bool loaded = false;
+        if( !cityFile.empty() )
+        {
+          game.reset();
+          loaded = game.load( cityFile );
+          if( loaded )
+            game.setNextScreen( scene::SCREEN_GAME );
+        }
+
+        if( !loaded )
+        {
+          // never leave the engine without a screen: fall back to the
+          // main menu so the user still gets a usable application
+          Logger::warning("Launcher action '" + launcherAction + "' failed, fallback to main menu");
+          game.setNextScreen( scene::SCREEN_MENU );
+        }
       }
+    }
+    catch( Exception& e )
+    {
+      Logger::warning("Launcher action failed: " + e.getDescription() + ", fallback to main menu");
+      game.setNextScreen( scene::SCREEN_MENU );
     }
 #endif
 

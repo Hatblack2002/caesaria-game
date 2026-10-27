@@ -418,6 +418,7 @@ void Game::initialize()
   };
   #undef ADD_STEP
 
+  bool videoFailed = false;
   for (auto& step : steps)
   {
     bool isOk = true;
@@ -429,12 +430,41 @@ void Game::initialize()
       if (!isOk)
       {
         Logger::error( "Game: initialize faild on step {}", step.name );
+#ifdef GAME_PLATFORM_ANDROID
+        // Killing the process here closes the whole application instantly
+        // (exit() bypasses every crash reporter). Degrade instead: skip the
+        // failed step and keep booting; only a broken video subsystem is fatal.
+        if( std::string( step.name ) == "initVideo" )
+          videoFailed = true;
+        Logger::warning( "Game: android continue without step {}", step.name );
+        continue;
+#else
         OSystem::error( "Game: initialize faild on step", step.name );
         exit(-1); //kill application
+#endif
       }
     }
-    catch(...) { exit(-1); }
+    catch(...)
+    {
+      Logger::error( "Game: initialize exception in step {}", step.name );
+#ifdef GAME_PLATFORM_ANDROID
+      if( std::string( step.name ) == "initVideo" )
+        videoFailed = true;
+      Logger::warning( "Game: android continue without step {}", step.name );
+#else
+      exit(-1);
+#endif
+    }
   }
+
+#ifdef GAME_PLATFORM_ANDROID
+  if( videoFailed || engine == nullptr )
+  {
+    // unwinds to main(), which logs the failure and lets the SDL activity
+    // finish cleanly instead of killing the whole application
+    throw Exception( "Game: android video subsystem unavailable" );
+  }
+#endif
 
   d.nextScreen = SCREEN_LOGO;
   d.engine->setFlag(gfx::Engine::showMetrics, 1);

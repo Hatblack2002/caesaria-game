@@ -55,11 +55,15 @@ jobs:
           cd android
           gradle --no-daemon --stacktrace assembleRelease assembleDebug
 
-      - name: Collect APKs
+      - name: Collect APKs and native symbols
         run: |
-          mkdir -p apk
+          mkdir -p apk symbols
           find android/app/build/outputs -name "*.apk" -exec cp {} apk/ \;
           ls -la apk/
+          # unstripped libmain.so for native crash backtrace symbolication
+          find android/app/build android/app/.cxx -name "libmain.so" \
+            -not -path "*stripped*" -exec cp {} symbols/ \; 2>/dev/null || true
+          ls -la symbols/ || true
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -67,6 +71,13 @@ jobs:
           name: caesaria-apk
           path: apk/
           if-no-files-found: error
+
+      - name: Upload unstripped native library (symbolication)
+        uses: actions/upload-artifact@v4
+        with:
+          name: caesaria-native-symbols
+          path: symbols/
+          if-no-files-found: ignore
 
       - name: Upload native build logs on failure
         if: failure()

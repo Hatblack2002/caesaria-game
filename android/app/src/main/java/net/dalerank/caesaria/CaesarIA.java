@@ -64,10 +64,25 @@ public class CaesarIA extends SDLActivity
   @Override
   protected void onCreate( Bundle savedInstanceState )
   {
+    Intent it = getIntent();
+    String action = it != null ? it.getStringExtra( "action" ) : null;
+    String loadfile = it != null ? it.getStringExtra( "loadfile" ) : null;
+
     CrashReporter.init( this );
+    // if this flag is still around on the next application start, this
+    // engine session died abnormally and telemetry will report it
+    CrashReporter.markEngineStart( this, action, loadfile );
     extractEngineResources();
     Log.i( TAG, "SDL activity starting (phase: engine)" );
     super.onCreate( savedInstanceState );
+  }
+
+  @Override
+  protected void onDestroy()
+  {
+    CrashReporter.markEngineEnd( this );
+    Log.i( TAG, "SDL activity destroyed" );
+    super.onDestroy();
   }
 
   /** Copy the bundled bin/resources from APK assets into the external files dir. */

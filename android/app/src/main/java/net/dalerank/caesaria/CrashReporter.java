@@ -14,14 +14,26 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
 
 /**
- * Telemetry (spec section 7): captures logcat of the previous session and
- * native/java crashes, then uploads them to a dedicated GitHub repository
- * through the Issues API so the maintainer can read device failures without
- * any user interaction.
+ * Telemetry (spec section 7), v2.
+ *
+ * Design goals:
+ *  - reports must survive process death (native exit(-1)/SIGSEGV kill the
+ *    process instantly, so nothing can be uploaded from the dying process);
+ *  - therefore: every crash/abnormal-exit is persisted to disk first, and the
+ *    NEXT application start uploads all pending reports;
+ *  - the engine (CaesarIA activity) marks its session start in
+ *    telemetry/engine_session.txt; if that file still exists on the next
+ *    launch, the previous engine session ended abnormally (native crash,
+ *    exit(), process kill) and a report is generated automatically.
  *
  * Credentials come from (in priority order):
  *   1. environment CAESARIA_TELEMETRY_TOKEN / CAESARIA_TELEMETRY_REPO (CI/dev)
@@ -34,26 +46,30 @@ public class CrashReporter
 {
   private static final String TAG = "CAESARIA_TELEMETRY";
   private static final String DIR = "telemetry";
+  private static final String SESSION_FLAG = "engine_session.txt";
+  private static final int MAX_PENDING = 6;
+  private static final int MAX_BODY = 60000;
 
+  private static boolean sInitDone = false;
+  private static Context sAppContext = null;
   private static String sToken = "";
   private static String sRepo = "";
   private static String sApkVersion = "";
   private static String sCommit = "";
-  private static String sSessionLogPath = "";
   private static Thread.UncaughtExceptionHandler sPrevHandler;
 
+  /** Call from every activity onCreate; safe and cheap when repeated. */
   public static void init( Context ctx )
   {
+    if( sInitDone ) return;
     try
     {
-      File dir = new File( ctx.getExternalFilesDir( null ), DIR );
-      if( !dir.exists() ) dir.mkdirs();
+      sAppContext = ctx.getApplicationContext();
+      ensureDir( ctx );
 
       loadConfig( ctx );
       sApkVersion = appVersion( ctx );
       sCommit = readCommit( ctx );
-
-      capturePreviousSession( ctx );
 
       sPrevHandler = Thread.getDefaultUncaughtExceptionHandler();
       Thread.setDefaultUncaughtExceptionHandler( new Thread.UncaughtExceptionHandler()
@@ -61,16 +77,25 @@ public class CrashReporter
         @Override
         public void uncaughtException( Thread t, Throwable e )
         {
-          try
-          {
-            saveCrash( ctx, e );
-            uploadCrash( ctx );
-          }
-          catch( Throwable ignored ) {}
+          // save only - the process is dying, uploading from here is
+          // unreliable; the next application start will upload the file
+          saveCrash( t, e );
           if( sPrevHandler != null )
             sPrevHandler.uncaughtException( t, e );
         }
       } );
+
+      sInitDone = true;
+
+      // collect everything that survived from previous sessions, then try to
+      // deliver pending reports in the background
+      collectPreviousSession( ctx );
+
+      new Thread( new Runnable()
+      {
+        @Override
+        public void run() { uploadPending(); }
+      }, "caesaria-telemetry" ).start();
 
       Log.i( TAG, "initialized (repo=" + (sRepo.isEmpty() ? "none" : sRepo) + ")" );
     }
@@ -80,13 +105,243 @@ public class CrashReporter
     }
   }
 
+  /** Engine session started (call from CaesarIA.onCreate). */
+  public static void markEngineStart( Context ctx, String action, String loadfile )
+  {
+    try
+    {
+      File f = new File( logRoot( ctx ), SESSION_FLAG );
+      SimpleDateFormat df = new SimpleDateFormat( "yyyy-MM-dd HH:mm:ss", Locale.US );
+      String content = "start=" + df.format( new Date() ) + "\n"
+          + "action=" + (action == null ? "(none)" : action) + "\n"
+          + "loadfile=" + (loadfile == null ? "" : loadfile) + "\n"
+          + "version=" + sApkVersion + "\n"
+          + "commit=" + sCommit + "\n";
+      java.io.FileOutputStream fo = new java.io.FileOutputStream( f );
+      fo.write( content.getBytes( StandardCharsets.UTF_8 ) );
+      fo.close();
+      Log.i( TAG, "engine session marked" );
+    }
+    catch( Throwable t ) { Log.w( TAG, "markEngineStart failed", t ); }
+  }
+
+  /** Engine session finished cleanly (call from CaesarIA.onDestroy). */
+  public static void markEngineEnd( Context ctx )
+  {
+    try
+    {
+      new File( logRoot( ctx ), SESSION_FLAG ).delete();
+      Log.i( TAG, "engine session ended normally" );
+    }
+    catch( Throwable t ) { Log.w( TAG, "markEngineEnd failed", t ); }
+  }
+
+  // ------------------------------------------------------------------ collect
+
+  /**
+   * If the engine-session flag is still present the previous engine run died
+   * abnormally (native crash / exit() / process kill). Build a report with the
+   * engine's own log (stdout.txt), the session info and the full logcat ring
+   * buffer (main + crash buffers contain the native tombstone backtrace).
+   */
+  private static void collectPreviousSession( Context ctx )
+  {
+    File flag = new File( logRoot( ctx ), SESSION_FLAG );
+    boolean abnormal = flag.exists();
+    try
+    {
+      String logcat = dumpLogcat( "-d -t 3000 -v time" ) + "\n"
+                    + dumpLogcat( "-d -b crash -t 800 -v time" );
+
+      if( abnormal )
+      {
+        String session = readFile( flag );
+        String nativeLog = tailFile( new File( ctx.getExternalFilesDir( null ), "stdout.txt" ), 30000 );
+        StringBuilder sb = new StringBuilder();
+        sb.append( "CaesarIA abnormal engine exit report\n" )
+          .append( "type: native/abnormal (engine_session flag survived)\n" )
+          .append( "version: " ).append( sApkVersion ).append( '\n' )
+          .append( "commit: " ).append( sCommit ).append( '\n' )
+          .append( "device: " ).append( Build.MANUFACTURER ).append( ' ' ).append( Build.MODEL )
+          .append( " (" ).append( Build.BOARD ).append(")\n" )
+          .append( "android: " ).append( Build.VERSION.RELEASE )
+          .append( " (api " ).append( Build.VERSION.SDK_INT ).append( ")\n" )
+          .append( "---- engine session ----\n" ).append( session ).append( '\n' );
+        if( !nativeLog.isEmpty() )
+          sb.append( "---- engine stdout.txt (tail) ----\n" ).append( nativeLog ).append( '\n' );
+        else
+          sb.append( "---- engine stdout.txt ----\n(native log not found)\n" );
+        sb.append( "---- logcat main+crash ----\n" ).append( logcat );
+
+        String ts = new SimpleDateFormat( "yyyyMMdd-HHmmss", Locale.US ).format( new Date() );
+        writeFile( new File( logRoot( ctx ), "report-native-" + ts + ".txt" ), sb.toString() );
+        Log.e( TAG, "previous engine session ended abnormally - report saved" );
+      }
+      else
+      {
+        // normal start: keep the logcat snapshot as an unnamed report only if
+        // a crash file from the Java handler asked for context - otherwise skip
+        Log.i( TAG, "no pending engine session flag" );
+      }
+    }
+    catch( Throwable t )
+    {
+      Log.w( TAG, "collectPreviousSession failed", t );
+    }
+    finally
+    {
+      if( abnormal ) flag.delete();
+    }
+  }
+
+  private static String dumpLogcat( String args )
+  {
+    try
+    {
+      Process p = Runtime.getRuntime().exec(
+          ("/system/bin/logcat " + args).split( " " ) );
+      InputStream in = p.getInputStream();
+      ByteArrayOutputStream bo = new ByteArrayOutputStream();
+      byte[] b = new byte[65536];
+      int r;
+      while( (r = in.read( b )) > 0 ) bo.write( b, 0, r );
+      in.close();
+      p.waitFor();
+      return bo.toString( "UTF-8" );
+    }
+    catch( Throwable t )
+    {
+      return "(logcat dump failed: " + t + ")";
+    }
+  }
+
+  // ------------------------------------------------------------------ crashes
+
+  private static void saveCrash( Thread t, Throwable e )
+  {
+    try
+    {
+      Context ctx = sAppContext;
+      if( ctx == null ) return;
+      String ts = new SimpleDateFormat( "yyyyMMdd-HHmmss", Locale.US ).format( new Date() );
+      File f = new File( logRoot( ctx ), "crash-java-" + ts + ".txt" );
+      StringBuilder sb = new StringBuilder();
+      sb.append( "CaesarIA java crash report\n" )
+        .append( "version: " ).append( sApkVersion ).append( '\n' )
+        .append( "commit: " ).append( sCommit ).append( '\n' )
+        .append( "device: " ).append( Build.MANUFACTURER ).append( ' ' ).append( Build.MODEL ).append( '\n' )
+        .append( "android: " ).append( Build.VERSION.RELEASE ).append( " (api " ).append( Build.VERSION.SDK_INT ).append( ")\n" )
+        .append( "thread: " ).append( t != null ? t.getName() : "?" ).append( "\n\n" )
+        .append( Log.getStackTraceString( e ) ).append( '\n' )
+        .append( "---- logcat main+crash ----\n" )
+        .append( dumpLogcat( "-d -t 2000 -v time" ) );
+
+      writeFile( f, sb.toString() );
+      Log.e( TAG, "crash saved: " + f.getAbsolutePath() );
+    }
+    catch( Throwable th ) { Log.w( TAG, "saveCrash failed", th ); }
+  }
+
+  // ------------------------------------------------------------------- upload
+
+  private static void uploadPending()
+  {
+    try
+    {
+      if( sToken.isEmpty() || sRepo.isEmpty() )
+      {
+        Log.w( TAG, "no telemetry credentials: reports kept on device only" );
+        return;
+      }
+
+      Context ctx = sAppContext;
+      if( ctx == null ) return;
+
+      File[] files = logRoot( ctx ).listFiles();
+      if( files == null ) return;
+
+      List<File> pending = new ArrayList<File>();
+      for( File f : files )
+        if( f.getName().startsWith( "crash-" ) || f.getName().startsWith( "report-" ) )
+          pending.add( f );
+
+      // oldest first, cap the backlog so a broken device never spams the queue
+      Collections.sort( pending, new Comparator<File>()
+      {
+        @Override public int compare( File a, File b ) { return a.getName().compareTo( b.getName() ); }
+      } );
+      while( pending.size() > MAX_PENDING )
+      {
+        pending.remove( 0 ).delete();
+      }
+
+      for( File f : pending )
+      {
+        String body = readFile( f );
+        if( body.length() > MAX_BODY ) body = body.substring( 0, MAX_BODY ) + "\n... (truncated)";
+        String kind = f.getName().startsWith( "crash-" ) ? "java crash" : "abnormal exit";
+        String title = "[auto] " + kind + " on " + Build.MODEL + " v" + sApkVersion;
+        boolean ok = postIssue( title, body );
+        Log.i( TAG, "upload " + f.getName() + ": " + (ok ? "ok" : "failed (will retry next start)") );
+        if( ok ) f.delete();
+      }
+    }
+    catch( Throwable t )
+    {
+      Log.w( TAG, "uploadPending failed", t );
+    }
+  }
+
+  private static boolean postIssue( String title, String body )
+  {
+    try
+    {
+      URL url = new URL( "https://api.github.com/repos/" + sRepo + "/issues" );
+      HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+      conn.setRequestMethod( "POST" );
+      conn.setDoOutput( true );
+      conn.setConnectTimeout( 15000 );
+      conn.setReadTimeout( 30000 );
+      conn.setRequestProperty( "Authorization", "token " + sToken );
+      conn.setRequestProperty( "Accept", "application/vnd.github+json" );
+      conn.setRequestProperty( "Content-Type", "application/json" );
+
+      String json = "{\"title\":\"" + jesc( title ) + "\",\"body\":\"" + jesc( body ) + "\",\"labels\":[\"telemetry\"]}";
+      OutputStream os = conn.getOutputStream();
+      os.write( json.getBytes( StandardCharsets.UTF_8 ) );
+      os.close();
+
+      int code = conn.getResponseCode();
+      InputStream in = code < 400 ? conn.getInputStream() : conn.getErrorStream();
+      if( in != null ) in.close();
+      conn.disconnect();
+      return code / 100 == 2;
+    }
+    catch( Throwable t )
+    {
+      Log.w( TAG, "postIssue failed", t );
+      return false;
+    }
+  }
+
+  // ------------------------------------------------------------------ helpers
+
+  private static void ensureDir( Context ctx )
+  {
+    File dir = logRoot( ctx );
+    if( !dir.exists() ) dir.mkdirs();
+  }
+
+  private static File logRoot( Context ctx )
+  {
+    return new File( ctx.getExternalFilesDir( null ), DIR );
+  }
+
   private static void loadConfig( Context ctx )
   {
-    // 1) environment (only useful under CI/dev shells)
     sToken = envOrEmpty( "CAESARIA_TELEMETRY_TOKEN" );
     sRepo = envOrEmpty( "CAESARIA_TELEMETRY_REPO" );
 
-    // 2) assets/telemetry.properties injected by the build pipeline
     if( sToken.isEmpty() )
     {
       try
@@ -132,79 +387,18 @@ public class CrashReporter
     catch( Throwable t ) { return "unknown"; }
   }
 
-  /** dump the current logcat ring buffer (previous session if app just started) */
-  private static void capturePreviousSession( Context ctx )
+  private static void writeFile( File f, String content )
   {
     try
     {
-      Process p = Runtime.getRuntime().exec( new String[]{ "logcat", "-d", "-t", "3000", "-v", "time" } );
-      InputStream in = p.getInputStream();
-      ByteArrayOutputStream bo = new ByteArrayOutputStream();
-      byte[] b = new byte[65536];
-      int r;
-      while( (r = in.read( b )) > 0 ) bo.write( b, 0, r );
-      in.close();
-
-      File f = new File( logRoot( ctx ), "previous_session.log" );
       java.io.FileOutputStream fo = new java.io.FileOutputStream( f );
-      fo.write( bo.toByteArray() );
+      fo.write( content.getBytes( StandardCharsets.UTF_8 ) );
       fo.close();
-      sSessionLogPath = f.getAbsolutePath();
-      Log.i( TAG, "previous session log saved: " + f.getAbsolutePath() );
     }
-    catch( Throwable t )
-    {
-      Log.w( TAG, "logcat capture failed", t );
-    }
+    catch( Throwable t ) { Log.w( TAG, "writeFile failed", t ); }
   }
 
-  private static File logRoot( Context ctx )
-  {
-    return new File( ctx.getExternalFilesDir( null ), DIR );
-  }
-
-  private static void saveCrash( Context ctx, Throwable e )
-  {
-    try
-    {
-      String ts = new SimpleDateFormat( "yyyyMMdd-HHmmss", Locale.US ).format( new Date() );
-      File f = new File( new File( ctx.getExternalFilesDir( null ), DIR ), "crash-" + ts + ".txt" );
-      StringBuilder sb = new StringBuilder();
-      sb.append( "CaesarIA crash report\n" )
-        .append( "version: " ).append( sApkVersion ).append( '\n' )
-        .append( "commit: " ).append( sCommit ).append( '\n' )
-        .append( "device: " ).append( Build.MANUFACTURER ).append( ' ' ).append( Build.MODEL ).append( '\n' )
-        .append( "android: " ).append( Build.VERSION.RELEASE ).append( " (api " ).append( Build.VERSION.SDK_INT ).append( ")\n" )
-        .append( "phase: see CAESARIA_LAUNCHER markers in attached log\n" )
-        .append( "thread: " ).append( t_name( e ) ).append( "\n\n" )
-        .append( Log.getStackTraceString( e ) ).append( '\n' );
-
-      // include the captured logcat for context
-      if( !sSessionLogPath.isEmpty() )
-      {
-        try
-        {
-          byte[] log = readFile( new File( sSessionLogPath ) );
-          sb.append( "\n----- logcat -----\n" ).append( new String( log, StandardCharsets.UTF_8 ) );
-        }
-        catch( Throwable ignored ) {}
-      }
-
-      java.io.FileOutputStream fo = new java.io.FileOutputStream( f );
-      fo.write( sb.toString().getBytes( StandardCharsets.UTF_8 ) );
-      fo.close();
-      Log.e( TAG, "crash saved: " + f.getAbsolutePath() );
-    }
-    catch( Throwable t ) { Log.w( TAG, "saveCrash failed", t ); }
-  }
-
-  private static String t_name( Throwable e )
-  {
-    StackTraceElement[] st = e.getStackTrace();
-    return st.length > 0 ? st[0].toString() : "?";
-  }
-
-  private static byte[] readFile( File f )
+  private static String readFile( File f )
   {
     try
     {
@@ -214,71 +408,28 @@ public class CrashReporter
       int r;
       while( (r = in.read( b )) > 0 ) bo.write( b, 0, r );
       in.close();
-      return bo.toByteArray();
+      return bo.toString( "UTF-8" );
     }
-    catch( Throwable t ) { return new byte[0]; }
+    catch( Throwable t ) { return ""; }
   }
 
-  private static void uploadCrash( final Context ctx )
-  {
-    if( sToken.isEmpty() || sRepo.isEmpty() )
-    {
-      Log.w( TAG, "no telemetry credentials: crash kept on device only" );
-      return;
-    }
-
-    new Thread( new Runnable()
-    {
-      @Override
-      public void run()
-      {
-        File dir = new File( ctx.getExternalFilesDir( null ), DIR );
-        File[] files = dir.listFiles();
-        if( files == null ) return;
-        for( File f : files )
-        {
-          if( !f.getName().startsWith( "crash-" ) ) continue;
-          String body = new String( readFile( f ), StandardCharsets.UTF_8 );
-          if( body.length() > 60000 ) body = body.substring( 0, 60000 ) + "\n... (truncated)";
-          String title = "[auto] crash on " + Build.MODEL + " " + sApkVersion;
-          boolean ok = postIssue( title, body );
-          Log.i( TAG, "upload " + f.getName() + ": " + (ok ? "ok" : "failed") );
-          if( ok ) f.delete();
-        }
-      }
-    }, "caesaria-telemetry" ).start();
-  }
-
-  private static boolean postIssue( String title, String body )
+  private static String tailFile( File f, int maxBytes )
   {
     try
     {
-      URL url = new URL( "https://api.github.com/repos/" + sRepo + "/issues" );
-      HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-      conn.setRequestMethod( "POST" );
-      conn.setDoOutput( true );
-      conn.setConnectTimeout( 15000 );
-      conn.setReadTimeout( 30000 );
-      conn.setRequestProperty( "Authorization", "token " + sToken );
-      conn.setRequestProperty( "Accept", "application/vnd.github+json" );
-      conn.setRequestProperty( "Content-Type", "application/json" );
-
-      String json = "{\"title\":\"" + jesc( title ) + "\",\"body\":\"" + jesc( body ) + "\",\"labels\":[\"telemetry\"]}";
-      OutputStream os = conn.getOutputStream();
-      os.write( json.getBytes( StandardCharsets.UTF_8 ) );
-      os.close();
-
-      int code = conn.getResponseCode();
-      InputStream in = code < 400 ? conn.getInputStream() : conn.getErrorStream();
-      if( in != null ) in.close();
-      conn.disconnect();
-      return code / 100 == 2;
+      if( !f.exists() ) return "";
+      long len = f.length();
+      FileInputStream in = new FileInputStream( f );
+      long skip = Math.max( 0, len - maxBytes );
+      in.skip( skip );
+      ByteArrayOutputStream bo = new ByteArrayOutputStream();
+      byte[] b = new byte[65536];
+      int r;
+      while( (r = in.read( b )) > 0 ) bo.write( b, 0, r );
+      in.close();
+      return bo.toString( "UTF-8" );
     }
-    catch( Throwable t )
-    {
-      Log.w( TAG, "postIssue failed", t );
-      return false;
-    }
+    catch( Throwable t ) { return ""; }
   }
 
   private static String jesc( String s )

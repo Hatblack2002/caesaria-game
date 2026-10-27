@@ -75,6 +75,7 @@ public class LauncherActivity extends Activity
   private File savesDir;
   private boolean resourcesReady = false;
   private boolean inMenu = false;
+  private boolean launching = false;
 
   private Typeface cinzel;
 
@@ -83,6 +84,10 @@ public class LauncherActivity extends Activity
   {
     super.onCreate( savedInstanceState );
     requestWindowFeature( Window.FEATURE_NO_TITLE );
+
+    // telemetry v2: captures the previous session, generates a report when the
+    // last engine run died abnormally and uploads every pending report
+    CrashReporter.init( this );
 
     baseDir = getExternalFilesDir( null );
     resourcesDir = new File( baseDir, "resources" );
@@ -386,6 +391,12 @@ public class LauncherActivity extends Activity
 
   private void launchGame( String action, String loadfile )
   {
+    if( launching )
+    {
+      Log.i( TAG, "launch ignored: engine already starting" );
+      return;
+    }
+    launching = true;
     Log.i( TAG, "action: " + action + (loadfile != null ? " file=" + loadfile : "") );
 
     Intent it = new Intent( this, CaesarIA.class );
@@ -697,6 +708,7 @@ public class LauncherActivity extends Activity
   {
     super.onResume();
     Log.i( TAG, "launcher resumed" );
+    launching = false;
     // user may have created/deleted saves while the engine was running
     if( inMenu ) refreshButtons();
   }
