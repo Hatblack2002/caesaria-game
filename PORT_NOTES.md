@@ -203,3 +203,51 @@ stdout.txt → muerte dura.
 - CrashReporter v3: crash buffer primero (tombstone), main buffer filtrado
   y con dedup; MAX_BODY 64000.
 - versionCode 4 (0.5-android.4).
+
+## Iteración 5 — pantalla negra + retorno silencioso al launcher (fase 4)
+
+**Evidencia (telemetría v3, issues #8-#11 de caesaria-logs, v0.5-android.4):**
+- Ya no hay SIGSEGV (buffer crash vacío en los 4 reportes): el fix GLES2 de
+  fase 4 quedó confirmado en dispositivo.
+- `action=new`: la ciudad (Tutorial1.sav) carga y el motor pide las pictures
+  del terreno → TODAS "Unknown resource" (land2a_*, sprites_*, paneling_*,
+  org_land_*, taxcolumn_*, shovel_*, picture2_*) → pantalla negra.
+- Muerte silenciosa ~2s después: sin señal, sin excepción capturada, sin
+  log posterior → el proceso terminó limpio y Android re-mostró el launcher.
+
+**Causa raíz (trazada en código):**
+1. `InSplash::mountArchives` carga `remake.model`, cuyas rutas usan el alias
+   `":/gfx/pics_land.zip"`; ese alias **no resuelve en el vfs de Android**
+   → los 12 zips de atlas nunca se montan → sin atlas, todo tile es
+   `Picture::getInvalid()` (los zips SÍ están extraídos en el dispositivo;
+   el fallo es de resolución de rutas, no de datos).
+2. El pack de PNGs sueltos (`resources/*.png`, 5507 ficheros, fuente del
+   tileset) nunca se empaquetó en el APK.
+3. Salida silenciosa: `InGame::~InGame` mapea `default:` del resultado de
+   `Level` a `SCREEN_QUIT`; con la misión tutorial mostrando su ventana
+   inicial vacía (locale `tutorial.en` inexistente + imagen desconocida) el
+   resultado no contemplado mata la app sin un solo log.
+4. Telemetría v3: el dedup comparaba líneas completas CON timestamp (nunca
+   iguales) y el stdout.txt no se filtraba → el reporte se llenó de spam
+   (64016 chars cap) y se perdió el final útil.
+
+**Cambios (versionCode 5, 0.5-android.5):**
+- `source/core/androidgfx.hpp` (nuevo): `mountGameArchives()` monta TODOS
+  los zips de `files/resources/gfx/*.zip` + `pics_all.zip` con ruta absoluta
+  de dispositivo ANTES de `Game::initialize()`, y registra sus atlas en
+  PictureBank (lazy, igual que el loader de escritorio); log + stage marker
+  con contadores.
+- Workflow: nuevo paso que genera `bin/resources/pics_all.zip` plano (5507
+  PNGs sueltos, ZIP_STORED 73MB, colisiones de basename resueltas por orden
+  alfabético, preferencia land1a/).
+- `main.cpp`: montaje en el arranque; guardia anti-quit-silencioso (un
+  `SCREEN_QUIT` sin haber pasado por el menú del motor → fallback forzado al
+  menú + noteFailure); stage markers (`exec_started`, `city_loaded`,
+  `forced_menu_fallback`, `exec_quit`).
+- `androidtelemetry.hpp`: `setStage()` escribe `telemetry/stage.txt`.
+- CrashReporter v4: dedup por contenido (timestamp stripped), líneas vacías
+  eliminadas, caps por sección (logcat 32k, stdout 14k), sección
+  "last engine stage" al principio, consumo de stage.txt.
+- Extracción de assets rev 2 e incremental (skip de ficheros intactos) en
+  LauncherActivity y CaesarIA: los dispositivos con fase 4 sólo extraen los
+  ficheros nuevos.

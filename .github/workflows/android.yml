@@ -50,6 +50,28 @@ jobs:
             echo "WARNING: TELEMETRY_REPO secret not set; telemetry stays offline"
           fi
 
+      - name: Build flat picture pack (pics_all.zip)
+        run: |
+          python3 - <<'EOF'
+          import os, zipfile
+          root = "resources"
+          paths = []
+          for dirpath, _, files in os.walk(root):
+              for f in files:
+                  if f.lower().endswith(".png"):
+                      paths.append(os.path.join(dirpath, f))
+          paths.sort()
+          entries = {}
+          for p in paths:
+              entries.setdefault(os.path.basename(p), p)  # first path wins (land1a/ preferred)
+          os.makedirs("bin/resources", exist_ok=True)
+          with zipfile.ZipFile("bin/resources/pics_all.zip", "w", zipfile.ZIP_STORED) as z:
+              for name in sorted(entries):
+                  z.write(entries[name], name)
+          print("pics_all.zip entries:", len(entries))
+          EOF
+          ls -la bin/resources/pics_all.zip
+
       - name: Build signed APK (arm64-v8a)
         run: |
           cd android

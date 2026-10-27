@@ -590,7 +590,7 @@ public class LauncherActivity extends Activity
       File marker = new File( baseDir, ".caesaria_assets_rev" );
       try
       {
-        if( marker.exists() && Integer.parseInt( new String( readAll( marker ) ).trim() ) >= 1 )
+        if( marker.exists() && Integer.parseInt( new String( readAll( marker ) ).trim() ) >= 2 )
           return resourcesDir.isDirectory();
       }
       catch( Throwable ignored ) {}
@@ -599,7 +599,7 @@ public class LauncherActivity extends Activity
       {
         copyAssetsRecursive( "resources", baseDir );
         FileOutputStream fo = new FileOutputStream( marker );
-        fo.write( "1".getBytes() );
+        fo.write( "2".getBytes() );
         fo.close();
         return resourcesDir.isDirectory();
       }
@@ -634,6 +634,9 @@ public class LauncherActivity extends Activity
     {
       // a plain file
       File outFile = new File( outDir, assetPath );
+      // incremental: skip files extracted intact by a previous revision
+      if( outFile.isFile() && outFile.length() > 0 )
+        return;
       File parent = outFile.getParentFile();
       if( parent != null && !parent.exists() ) parent.mkdirs();
       InputStream in = getAssets().open( assetPath );

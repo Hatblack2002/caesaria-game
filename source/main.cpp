@@ -18,6 +18,9 @@
 #include "core/utils.hpp"
 #include "core/exception.hpp"
 #include "core/androidtelemetry.hpp"
+#ifdef GAME_PLATFORM_ANDROID
+#include "core/androidgfx.hpp"
+#endif
 #include "vfs/directory.hpp"
 #include "game/settings.hpp"
 #include "game/game.hpp"
@@ -95,6 +98,13 @@ int main(int argc, char* argv[])
 
   try
   {
+#ifdef GAME_PLATFORM_ANDROID
+    // mount the packaged zip archives (remake atlases + flat picture pack)
+    // with absolute device paths before the resource loader runs; the ":/"
+    // vfs alias used by the model files does not resolve on Android
+    androidgfx::mountGameArchives();
+#endif
+
     Game game;
     game.initialize();
 
@@ -125,7 +135,10 @@ int main(int argc, char* argv[])
           game.reset();
           loaded = game.load( cityFile );
           if( loaded )
+          {
+            androidtelemetry::setStage( "city_loaded" );
             game.setNextScreen( scene::SCREEN_GAME );
+          }
         }
 
         if( !loaded )
@@ -156,13 +169,32 @@ int main(int argc, char* argv[])
     // a throw inside any screen (city render, gui, ...) must never kill the
     // whole application: fall back to the engine menu and keep the app alive
     int consecutiveFailures = 0;
+    int forcedMenuFallbacks = 0;
+    androidtelemetry::setStage( "exec_started" );
     while( consecutiveFailures < 3 )
     {
       bool frameOk = true;
       try
       {
         if( !game.exec() )
+        {
+          // a SCREEN_QUIT arriving while the player never reached the engine
+          // menu is a bug (unexpected Level result -> InGame destructor), not
+          // a user action: show the menu instead of exiting silently
+          if( forcedMenuFallbacks < 1 )
+          {
+            forcedMenuFallbacks++;
+            frameOk = false;
+            Logger::warning( "Engine requested quit outside the main menu, forcing main menu fallback" );
+            androidtelemetry::noteFailure( "unexpected quit request, forced menu fallback" );
+            androidtelemetry::setStage( "forced_menu_fallback" );
+            game.setNextScreen( scene::SCREEN_MENU );
+            continue;
+          }
+
+          androidtelemetry::setStage( "exec_quit" );
           break;
+        }
         consecutiveFailures = 0;
       }
       catch( Exception& e )

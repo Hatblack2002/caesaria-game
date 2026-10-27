@@ -41,6 +41,21 @@ inline void noteFailure( const std::string& what )
     f << what << "\n";
 }
 
+/** Record the last engine stage into a tiny marker file; the Java
+    CrashReporter includes it in the report so a silent death can be
+    located without a tombstone. */
+inline void setStage( const std::string& stage )
+{
+  std::string p = errorFilePath();
+  if( p.empty() )
+    return;
+
+  std::string sp = p.substr( 0, p.rfind( '/' ) + 1 ) + "stage.txt";
+  std::ofstream f( sp.c_str(), std::ios::trunc );
+  if( f.is_open() )
+    f << stage << "\n";
+}
+
 } // namespace androidtelemetry
 
 #endif // GAME_PLATFORM_ANDROID

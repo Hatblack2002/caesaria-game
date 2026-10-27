@@ -48,6 +48,7 @@ public class CrashReporter
   private static final String DIR = "telemetry";
   private static final String SESSION_FLAG = "engine_session.txt";
   private static final String ENGINE_ERROR = "engine_error.txt";
+  private static final String STAGE_FILE = "stage.txt";
   private static final int MAX_PENDING = 6;
   private static final int MAX_BODY = 64000;
 
@@ -173,6 +174,7 @@ public class CrashReporter
     boolean flagAlive = !sEngineRunning;
     File flag = new File( logRoot( ctx ), SESSION_FLAG );
     File errFile = new File( logRoot( ctx ), ENGINE_ERROR );
+    File stageFile = new File( logRoot( ctx ), STAGE_FILE );
     boolean abnormal = (flag.exists() && flagAlive) || errFile.exists();
     try
     {
@@ -186,11 +188,13 @@ public class CrashReporter
       // small; the main buffer is dominated by engine log spam and must be
       // filtered, otherwise it eats the whole report body
       String logcatCrash = dumpLogcat( "-d -b crash -t 800 -v time" );
-      String logcatMain = filterSpam( dumpLogcat( "-d -t 1500 -v time" ) );
+      String logcatMain = filterSpam( dumpLogcat( "-d -t 2000 -v time" ), 32000 );
 
       String session = flag.exists() ? readFile( flag ) : "(no session flag)";
       String engineErrors = errFile.exists() ? readFile( errFile ) : "(none)";
-      String nativeLog = tailFile( new File( ctx.getExternalFilesDir( null ), "stdout.txt" ), 30000 );
+      String stage = stageFile.exists() ? readFile( stageFile ) : "(none)";
+      String nativeLog = filterSpam(
+          tailFile( new File( ctx.getExternalFilesDir( null ), "stdout.txt" ), 40000 ), 14000 );
 
       StringBuilder sb = new StringBuilder();
       sb.append( "CaesarIA abnormal engine exit report\n" )
@@ -201,6 +205,7 @@ public class CrashReporter
         .append( " (" ).append( Build.BOARD ).append(")\n" )
         .append( "android: " ).append( Build.VERSION.RELEASE )
         .append( " (api " ).append( Build.VERSION.SDK_INT ).append( ")\n" )
+        .append( "---- last engine stage ----\n" ).append( stage ).append( "\n" )
         .append( "---- engine session ----\n" ).append( session ).append( '\n' )
         .append( "---- engine_error.txt ----\n" ).append( engineErrors ).append( '\n' )
         .append( "---- logcat CRASH BUFFER (tombstone/backtrace) ----\n" ).append( logcatCrash ).append( '\n' );
@@ -225,14 +230,18 @@ public class CrashReporter
       {
         if( flagAlive ) flag.delete();
         errFile.delete();
+        stageFile.delete();
       }
     }
   }
 
   // engine resource-loading warnings repeat thousands of times per second;
   // they flood the logcat ring buffer and eat the report body, hiding the
-  // actual crash trace. Drop the known spam and collapse identical repeats.
-  private static String filterSpam( String logcat )
+  // actual crash trace. Collapse identical repeats AFTER stripping the logcat
+  // timestamp prefix (timestamps differ per line and would defeat the dedup),
+  // drop empty lines, and cap the output so no single section can starve the
+  // others.
+  private static String filterSpam( String logcat, int maxChars )
   {
     if( logcat == null || logcat.isEmpty() ) return logcat;
     String[] spamPatterns = {
@@ -244,13 +253,21 @@ public class CrashReporter
     String prev = null; int repeats = 0;
     for( String line : logcat.split( "\n" ) )
     {
+      String content = line.replaceFirst( "^\\d\\d-\\d\\d \\d\\d:\\d\\d:\\d\\d\\.\\d+ ", "" );
+      String trimmed = content.trim();
+      if( trimmed.isEmpty() ) continue; // engine emits thousands of blank log lines
       boolean spam = false;
-      for( String p : spamPatterns ) if( line.contains( p ) ) { spam = true; break; }
+      for( String p : spamPatterns ) if( content.contains( p ) ) { spam = true; break; }
       if( spam ) continue;
-      if( line.equals( prev ) ) { repeats++; continue; }
+      if( content.equals( prev ) ) { repeats++; continue; }
       if( repeats > 0 ) { out.append( "... (previous line repeated ").append( repeats ).append( " more times)\n" ); repeats = 0; }
+      if( out.length() > maxChars )
+      {
+        out.append( "... (report section capped at ").append( maxChars ).append( " chars)\n" );
+        break;
+      }
       out.append( line ).append( '\n' );
-      prev = line;
+      prev = content;
     }
     if( repeats > 0 ) out.append( "... (previous line repeated ").append( repeats ).append( " more times)\n" );
     return out.toString();

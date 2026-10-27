@@ -25,7 +25,8 @@ public class CaesarIA extends SDLActivity
   private static final String TAG = "CAESARIA_LAUNCHER";
 
   // bump when bundled assets change so resources are re-extracted
-  private static final int ASSETS_REV = 1;
+  // rev 2: adds the flat picture pack (pics_all.zip) with every loose png
+  private static final int ASSETS_REV = 2;
 
   @Override
   protected String[] getLibraries()
@@ -158,6 +159,9 @@ public class CaesarIA extends SDLActivity
       else
       {
         File outFile = new File( outDir, child );
+        // incremental: skip files extracted intact by a previous revision
+        if( outFile.isFile() && outFile.length() > 0 )
+          continue;
         File parent = outFile.getParentFile();
         if( parent != null && !parent.exists() ) parent.mkdirs();
         InputStream in = getAssets().open( child );
