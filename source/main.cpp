@@ -142,9 +142,50 @@ int main(int argc, char* argv[])
       Logger::warning("Launcher action failed: " + e.getDescription() + ", fallback to main menu");
       game.setNextScreen( scene::SCREEN_MENU );
     }
+    catch( ... )
+    {
+      Logger::warning("Launcher action failed: unknown exception, fallback to main menu");
+#ifdef GAME_PLATFORM_ANDROID
+      androidtelemetry::noteFailure( "launcher action: unknown exception" );
+#endif
+      game.setNextScreen( scene::SCREEN_MENU );
+    }
 #endif
 
+#ifdef GAME_PLATFORM_ANDROID
+    // a throw inside any screen (city render, gui, ...) must never kill the
+    // whole application: fall back to the engine menu and keep the app alive
+    int consecutiveFailures = 0;
+    while( consecutiveFailures < 3 )
+    {
+      bool frameOk = true;
+      try
+      {
+        if( !game.exec() )
+          break;
+        consecutiveFailures = 0;
+      }
+      catch( Exception& e )
+      {
+        frameOk = false;
+        Logger::warning("Screen error: " + e.getDescription() + ", fallback to main menu");
+        androidtelemetry::noteFailure( "screen: " + e.getDescription() );
+        game.setNextScreen( scene::SCREEN_MENU );
+      }
+      catch( ... )
+      {
+        frameOk = false;
+        Logger::warning("Screen error: unknown exception, fallback to main menu");
+        androidtelemetry::noteFailure( "screen: unknown exception" );
+        game.setNextScreen( scene::SCREEN_MENU );
+      }
+
+      if( !frameOk )
+        consecutiveFailures++;
+    }
+#else
     while( game.exec() );
+#endif
 
     game.destroy();
   }

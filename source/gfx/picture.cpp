@@ -70,6 +70,17 @@ SDL_Texture* Picture::texture() const         { return _d->texture;}
 SDL_Surface* Picture::surface() const         { return _d->surface;  }
 unsigned int Picture::textureID() const       { return _d->opengltx; }
 unsigned int& Picture::textureID()            { return _d->opengltx; }
+
+void Picture::setTextureSize( int w, int h )
+{
+  _d->openglTexW = w;
+  _d->openglTexH = h;
+}
+
+Size Picture::textureSize() const
+{
+  return Size( _d->openglTexW, _d->openglTexH );
+}
 const Point& Picture::offset() const          { return _offset;}
 int Picture::width() const                    { return _orect.width();}
 int Picture::height() const                   { return _orect.height();}

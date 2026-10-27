@@ -31,11 +31,15 @@ public:
   SDL_Surface* surface;
   SDL_Texture* texture;  // for SDL surface
   unsigned int opengltx;
+  int openglTexW;   // real uploaded texture size (GLES2 has no glGetTexLevelParameter)
+  int openglTexH;
 
   PictureImpl()
   {
     surface = 0;
     texture = 0;
+    openglTexW = 0;
+    openglTexH = 0;
   }
 
   PictureImpl& operator=(const PictureImpl& other)
@@ -43,6 +47,8 @@ public:
     surface = other.surface;
     texture = other.texture;
     opengltx = other.opengltx;
+    openglTexW = other.openglTexW;
+    openglTexH = other.openglTexH;
 
     return *this;
   }

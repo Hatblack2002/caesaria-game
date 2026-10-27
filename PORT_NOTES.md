@@ -170,3 +170,36 @@ Detalles quirúrgicos:
      simbolizar backtraces.
 * Pendiente de verificar en S20: qué paso de inicialización falla (el reporte
   telemétrico lo dirá).
+
+## Iteración 4 — fix SIGSEGV del primer render GLES2 (telemetría fase 3)
+
+**Evidencia** (issues #4-#7 en caesaria-logs, v0.5-android.3): el video ya
+inicializa (fix GLES2 OK), el tutorial carga completo, y el proceso muere en
+silencio (<1 s) justo al construir la pantalla de ciudad. Sin [FATAL] en
+stdout.txt → muerte dura.
+
+**Causa raíz encontrada en el código** (sin necesitar backtrace):
+1. `GlEngine::draw()` (GLES2): `glVertexPointer(3, ...)` sobre un array de
+   vértices de 2 floats → el driver lee fuera del buffer → SIGSEGV en el
+   primer frame dibujado (Adreno/S20). Además `glGetTexLevelParameterfv` no
+   existe en GLES2 → devolvía basura no inicializada.
+2. `loadPicture()` desreferenciaba `surface->format` con surface==NULL para
+   Pictures inválidas (recursos faltantes devuelven Picture::getInvalid()).
+3. `Path::absolutePath()`: al fallar realpath() llamaba
+   flattenFilename(path) usando la ruta como root → duplicaba la ruta
+   (evidencia: "locale/tutorial.enstorage/emulated/...").
+
+**Cambios**:
+- gl_engine.cpp: glVertexPointer(2,...), UVs reales (ox0..oy1) usando el
+  tamaño de textura almacenado en upload (Picture::setTextureSize), guard
+  de surface nula en loadPicture.
+- main.cpp: bucle exec con try/catch → cualquier excepción en pantalla cae
+  al menú del motor (3 strikes → salida limpia); catch(...) también en el
+  bloque de acción del launcher.
+- gamestate.cpp: steps del splash sin exit(-1) en Android (skip + warning).
+- infodb.cpp/imgid.cpp: warnings de recursos desconocidos se loguean 1 vez
+  por clave (antes: miles/segundo, ahogaban logcat).
+- vfs/path.cpp: absolutePath() ya no duplica rutas absolutas inexistentes.
+- CrashReporter v3: crash buffer primero (tombstone), main buffer filtrado
+  y con dedup; MAX_BODY 64000.
+- versionCode 4 (0.5-android.4).

@@ -19,6 +19,7 @@
 #include "game/resourcegroup.hpp"
 #include "core/logger.hpp"
 #include "core/utils.hpp"
+#include <set>
 
 using namespace direction;
 
@@ -64,8 +65,12 @@ std::string toResource( const unsigned int imgId )
       res_pfx = ResourceGroup::housing;
       res_id = 51;
     } // TERRIBLE HACK!
-
-    Logger::warning( "!!! TileHelper unknown image Id={} ", imgId );
+    else
+    {
+      static std::set<int> _loggedUnknownIds;
+      if( _loggedUnknownIds.insert( imgId ).second )
+        Logger::warning( "!!! TileHelper unknown image Id={} ", imgId );
+    }
   }
 
   std::string ret_str = utils::format( 0xff, "%s_%05d", res_pfx.c_str(), res_id );
@@ -93,7 +98,9 @@ int fromResource( const std::string& pic_name )
   else if (res_pfx == config::rc.land3a) { res_id += 778; }
   else
   {
-    Logger::warning( "!!! TileHelper unknown image " + pic_name );
+    static std::set<std::string> _loggedUnknownNames;
+    if( _loggedUnknownNames.insert( pic_name ).second )
+      Logger::warning( "!!! TileHelper unknown image " + pic_name );
     res_id = 0;
   }
 

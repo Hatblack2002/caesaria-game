@@ -271,11 +271,21 @@ bool InSplash::update(gfx::Engine* engine)
       if (!isOk)
       {
         Logger::error( "Game: initialize faild on step {}", step.name );
+#ifdef GAME_PLATFORM_ANDROID
+        // exit() here kills the whole application with no trace
+        Logger::warning( "Game: android continue without splash step {}", step.name );
+        continue;
+#else
         OSystem::error( "Game: initialize faild on step", step.name );
         exit(-1); //kill application
+#endif
       }
     }
+#ifdef GAME_PLATFORM_ANDROID
+    catch(...) { Logger::warning( "Game: android continue without splash step {} (exception)", step.name ); }
+#else
     catch(...) { exit(-1); }
+#endif
   }
 
   _game->setNextScreen(SCREEN_MENU);

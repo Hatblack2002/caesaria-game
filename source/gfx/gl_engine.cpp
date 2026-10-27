@@ -194,7 +194,7 @@ void FrameBuffer::_createFramebuffer( unsigned int& id )
   glBindFramebuffer(GL_FRAMEBUFFER_EXT, id);
 
   glBindTexture(GL_TEXTURE_2D, colorbuffer);
-  glTexImage2D(	GL_TEXTURE_2D,
+  glTexImage2D( GL_TEXTURE_2D,
                 0,
                 GL_RGBA,
                 _size.width(), _size.height(),
@@ -715,6 +715,12 @@ void GlEngine::loadPicture(Picture& ioPicture, bool streamed)
 
   SDL_Surface* surface = ioPicture.surface(); //SDL_DisplayFormatAlpha( ioPicture.surface() );
 
+  if( !surface || !surface->format )
+  {
+    // invalid/empty picture (e.g. missing resource): nothing to upload
+    return;
+  }
+
   GLenum texture_format;
   GLint nOfColors;
 
@@ -770,9 +776,13 @@ void GlEngine::loadPicture(Picture& ioPicture, bool streamed)
 
   glTexImage2D( GL_TEXTURE_2D, 0, nOfColors, texture_w, texture_h, 0,
                 texture_format, GL_UNSIGNED_BYTE, surface->pixels );
+
+  ioPicture.setTextureSize( texture_w, texture_h );
 #else
   glTexImage2D( GL_TEXTURE_2D, 0, nOfColors, surface->w, surface->h, 0,
                 texture_format, GL_UNSIGNED_BYTE, surface->pixels );
+
+  ioPicture.setTextureSize( surface->w, surface->h );
 #endif
 }
 
@@ -849,9 +859,11 @@ void GlEngine::draw(const Picture& picture, const int dx, const int dy, Rect* cl
   float y1 = y0 + picSize.height() * scale.y();
 
   glBindTexture( GL_TEXTURE_2D, aTextureID);
-  float imageWidth, imageHeight;
-  glGetTexLevelParameterfv(GL_TEXTURE_2D,0,GL_TEXTURE_WIDTH,&imageWidth);
-  glGetTexLevelParameterfv(GL_TEXTURE_2D,0,GL_TEXTURE_HEIGHT,&imageHeight);
+  // GLES2 has no glGetTexLevelParameter*; use the texture size
+  // recorded when the picture was uploaded by loadPicture()
+  const Size texSize = picture.textureSize();
+  float imageWidth = (float)texSize.width();
+  float imageHeight = (float)texSize.height();
 
   if( imageWidth <= 0 || imageHeight <= 0 )
     return;
@@ -869,16 +881,16 @@ void GlEngine::draw(const Picture& picture, const int dx, const int dy, Rect* cl
   };
 
   GLfloat tex1[] = {
-    0, 0,
-    1, 0,
-    1, 1,
-    0, 1
+    ox0, oy0,
+    ox1, oy0,
+    ox1, oy1,
+    ox0, oy1
   };
 
   glEnableClientState(GL_VERTEX_ARRAY);
   glEnableClientState(GL_TEXTURE_COORD_ARRAY);
 
-  glVertexPointer(3, GL_FLOAT, 0, vtx1 );
+  glVertexPointer(2, GL_FLOAT, 0, vtx1 );
   glTexCoordPointer(2, GL_FLOAT, 0, tex1 );
   glDrawArrays(GL_TRIANGLE_FAN, 0, 4 );
 
@@ -948,9 +960,11 @@ void GlEngine::draw(const Picture& picture, const Rect& src, const Rect& dst, Re
 
   glBindTexture( GL_TEXTURE_2D, aTextureID);
 
-  float imageWidth, imageHeight;
-  glGetTexLevelParameterfv(GL_TEXTURE_2D,0,GL_TEXTURE_WIDTH,&imageWidth);
-  glGetTexLevelParameterfv(GL_TEXTURE_2D,0,GL_TEXTURE_HEIGHT,&imageHeight);
+  // GLES2 has no glGetTexLevelParameter*; use the texture size
+  // recorded when the picture was uploaded by loadPicture()
+  const Size texSize = picture.textureSize();
+  float imageWidth = (float)texSize.width();
+  float imageHeight = (float)texSize.height();
 
   if( imageWidth <= 0 || imageHeight <= 0 )
     return;
@@ -968,16 +982,16 @@ void GlEngine::draw(const Picture& picture, const Rect& src, const Rect& dst, Re
   };
 
   GLfloat tex1[] = {
-    0, 0,
-    1, 0,
-    1, 1,
-    0, 1
+    ox0, oy0,
+    ox1, oy0,
+    ox1, oy1,
+    ox0, oy1
   };
 
   glEnableClientState(GL_VERTEX_ARRAY);
   glEnableClientState(GL_TEXTURE_COORD_ARRAY);
 
-  glVertexPointer(3, GL_FLOAT, 0, vtx1 );
+  glVertexPointer(2, GL_FLOAT, 0, vtx1 );
   glTexCoordPointer(2, GL_FLOAT, 0, tex1 );
   glDrawArrays(GL_TRIANGLE_FAN, 0, 4 );
 

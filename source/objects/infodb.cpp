@@ -17,6 +17,7 @@
 // Copyright 2012-2015 dalerank, dalerankn8@gmail.com
 
 #include "infodb.hpp"
+#include <set>
 
 #include <map>
 #include "core/gettext.hpp"
@@ -85,7 +86,12 @@ public:
     const Info& ret = valueOrDefault(type, Info::invalid);
 
     if (ret.type() == object::unknown) {
-      Logger::warning("MetaDataHolder::Unknown objects {}", type );
+      // log every unknown type only once: this fires per tile during city
+      // load and floods logcat (which also hides real crash traces)
+      static std::set<object::Type> _loggedUnknownTypes;
+      if( _loggedUnknownTypes.insert( type ).second ) {
+        Logger::warning("MetaDataHolder::Unknown objects {}", type );
+      }
     }
 
     return ret;

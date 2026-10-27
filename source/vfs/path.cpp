@@ -284,6 +284,13 @@ Path Path::absolutePath() const
     if (!fpath[0]) // seems like fpath wasn't altered, use our best guess
     {
       Path tmp(_d->path);
+      // realpath() fails for every non-existing file; for already-absolute
+      // paths returning the path itself is correct. flattenFilename(tmp)
+      // here would duplicate the whole path (tmp is used as root and
+      // re-appended segment by segment)
+      if( !tmp.toString().empty() && tmp.toString()[ 0 ] == '/' )
+        return tmp;
+
       return flattenFilename(tmp);
     }
     else

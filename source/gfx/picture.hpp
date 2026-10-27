@@ -70,6 +70,8 @@ public:
   SDL_Surface* surface() const;
   unsigned int& textureID();
   unsigned int textureID() const;
+  void setTextureSize( int w, int h );
+  Size textureSize() const;
 
 #ifndef CAESARIA_DISABLE_PICTUREBANK
   Picture& load( const std::string& group, const int id );

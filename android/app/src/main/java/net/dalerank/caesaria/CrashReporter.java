@@ -49,7 +49,7 @@ public class CrashReporter
   private static final String SESSION_FLAG = "engine_session.txt";
   private static final String ENGINE_ERROR = "engine_error.txt";
   private static final int MAX_PENDING = 6;
-  private static final int MAX_BODY = 60000;
+  private static final int MAX_BODY = 64000;
 
   private static boolean sInitDone = false;
   private static volatile boolean sEngineRunning = false;
@@ -182,8 +182,11 @@ public class CrashReporter
         return;
       }
 
-      String logcat = dumpLogcat( "-d -t 3000 -v time" ) + "\n"
-                    + dumpLogcat( "-d -b crash -t 800 -v time" );
+      // crash buffer FIRST: it holds the native tombstone backtrace and is
+      // small; the main buffer is dominated by engine log spam and must be
+      // filtered, otherwise it eats the whole report body
+      String logcatCrash = dumpLogcat( "-d -b crash -t 800 -v time" );
+      String logcatMain = filterSpam( dumpLogcat( "-d -t 1500 -v time" ) );
 
       String session = flag.exists() ? readFile( flag ) : "(no session flag)";
       String engineErrors = errFile.exists() ? readFile( errFile ) : "(none)";
@@ -199,12 +202,13 @@ public class CrashReporter
         .append( "android: " ).append( Build.VERSION.RELEASE )
         .append( " (api " ).append( Build.VERSION.SDK_INT ).append( ")\n" )
         .append( "---- engine session ----\n" ).append( session ).append( '\n' )
-        .append( "---- engine_error.txt ----\n" ).append( engineErrors ).append( '\n' );
+        .append( "---- engine_error.txt ----\n" ).append( engineErrors ).append( '\n' )
+        .append( "---- logcat CRASH BUFFER (tombstone/backtrace) ----\n" ).append( logcatCrash ).append( '\n' );
       if( !nativeLog.isEmpty() )
         sb.append( "---- engine stdout.txt (tail) ----\n" ).append( nativeLog ).append( '\n' );
       else
         sb.append( "---- engine stdout.txt ----\n(native log not found)\n" );
-      sb.append( "---- logcat main+crash ----\n" ).append( logcat );
+      sb.append( "---- logcat main (spam filtered) ----\n" ).append( logcatMain );
 
       String ts = new SimpleDateFormat( "yyyyMMdd-HHmmss", Locale.US ).format( new Date() );
       writeFile( new File( logRoot( ctx ), "report-native-" + ts + ".txt" ), sb.toString() );
@@ -223,6 +227,33 @@ public class CrashReporter
         errFile.delete();
       }
     }
+  }
+
+  // engine resource-loading warnings repeat thousands of times per second;
+  // they flood the logcat ring buffer and eat the report body, hiding the
+  // actual crash trace. Drop the known spam and collapse identical repeats.
+  private static String filterSpam( String logcat )
+  {
+    if( logcat == null || logcat.isEmpty() ) return logcat;
+    String[] spamPatterns = {
+        "MetaDataHolder::Unknown objects",
+        "TileHelper unknown image",
+        "PictureBank: Unknown resource"
+    };
+    StringBuilder out = new StringBuilder();
+    String prev = null; int repeats = 0;
+    for( String line : logcat.split( "\n" ) )
+    {
+      boolean spam = false;
+      for( String p : spamPatterns ) if( line.contains( p ) ) { spam = true; break; }
+      if( spam ) continue;
+      if( line.equals( prev ) ) { repeats++; continue; }
+      if( repeats > 0 ) { out.append( "... (previous line repeated ").append( repeats ).append( " more times)\n" ); repeats = 0; }
+      out.append( line ).append( '\n' );
+      prev = line;
+    }
+    if( repeats > 0 ) out.append( "... (previous line repeated ").append( repeats ).append( " more times)\n" );
+    return out.toString();
   }
 
   private static String dumpLogcat( String args )
